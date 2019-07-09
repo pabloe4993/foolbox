@@ -401,7 +401,7 @@ class Adversarial(object):
         self._total_gradient_calls += 1
         gradient = self.__model.gradient_one(x, label)
 
-        assert gradient.shape == x.shape
+        #assert gradient.shape == x.shape
         return gradient
 
     def forward_and_gradient_one(self, x=None, label=None, strict=True, return_details=False):

@@ -33,12 +33,14 @@ class TensorFlowModel(DifferentiableModel):
             logits,
             bounds,
             channel_axis=3,
-            preprocessing=(0, 1)):
+            preprocessing=(0, 1),
+            dx = None):
 
         super(TensorFlowModel, self).__init__(bounds=bounds,
                                               channel_axis=channel_axis,
                                               preprocessing=preprocessing)
-
+        if dx == None:
+            dx = inputs
         # delay import until class is instantiated
         import tensorflow as tf
 
@@ -60,21 +62,22 @@ class TensorFlowModel(DifferentiableModel):
 
             labels = tf.placeholder(tf.int64, (None,), name='labels')
             self._labels = labels
+            self._dx = dx
 
             loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits)
             loss = tf.reduce_sum(loss)
             self._loss = loss
 
-            gradient, = tf.gradients(loss, inputs)
+            gradient, = tf.gradients(loss, dx)
             if gradient is None:
-                gradient = tf.zeros_like(inputs)
+                gradient = tf.zeros_like(dx)
             self._gradient = gradient
 
             backward_grad_logits = tf.placeholder(tf.float32, logits.shape)
             backward_loss = tf.reduce_sum(logits * backward_grad_logits)
-            backward_grad_inputs, = tf.gradients(backward_loss, inputs)
+            backward_grad_inputs, = tf.gradients(backward_loss, dx)
             if backward_grad_inputs is None:
-                backward_grad_inputs = tf.zeros_like(inputs)
+                backward_grad_inputs = tf.zeros_like(dx)
 
             self._backward_grad_logits = backward_grad_logits
             self._backward_grad_inputs = backward_grad_inputs

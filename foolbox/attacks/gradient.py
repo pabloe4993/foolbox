@@ -19,6 +19,7 @@ class SingleStepGradientBaseAttack(Attack):
         if not a.has_gradient():
             return
 
+        import tensorflow as tf
         x = a.unperturbed
         min_, max_ = a.bounds()
 
@@ -32,10 +33,16 @@ class SingleStepGradientBaseAttack(Attack):
 
         for _ in range(2):  # to repeat with decreased epsilons if necessary
             for i, epsilon in enumerate(epsilons):
-                perturbed = x + gradient * epsilon
-                perturbed = np.clip(perturbed, min_, max_)
 
-                _, is_adversarial = a.forward_one(perturbed)
+                dx = a._model.session.run(a._model._dx)
+                perturbed = dx + gradient * epsilon
+                perturbed = np.clip(perturbed, min_, max_)
+                a._model.session.run(tf.assign(a._model._dx, perturbed))
+
+                # perturbed = x + gradient * epsilon
+                # perturbed = np.clip(perturbed, min_, max_)
+
+                _, is_adversarial = a.forward_one(x)
                 if is_adversarial:
                     if decrease_if_first and i < 20:
                         logging.info('repeating attack with smaller epsilons')
