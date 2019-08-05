@@ -8,6 +8,8 @@ from .base import Attack
 from .base import call_decorator
 
 
+
+
 class SingleStepGradientBaseAttack(Attack):
     """Common base class for single step gradient attacks."""
 
@@ -34,15 +36,31 @@ class SingleStepGradientBaseAttack(Attack):
         for _ in range(2):  # to repeat with decreased epsilons if necessary
             for i, epsilon in enumerate(epsilons):
 
-                dx = a._model.session.run(a._model._dx)
-                perturbed = dx + gradient * epsilon
-                perturbed = np.clip(perturbed, min_, max_)
-                a._model.session.run(tf.assign(a._model._dx, perturbed))
+                pert = a._model.session.run(a._model._pert)
+                # adv = a._model.session.run(a._model._adversarial, feed_dict={a._model._inputs: x[np.newaxis]})
+                # adv = x
+                mask =a._model.session.run(a._model._mask)
+
+                perturbed = pert + gradient * epsilon
+                # a._model.session.run(tf.assign(a._model._pert, perturbed))
+                # adv = a._model.session.run(a._model._adversarial, feed_dict={a._model._inputs: x[np.newaxis]})
+
+                q1 = np.where(mask, max_ - x, np.inf)
+                q2 = np.where(mask, min_ - x, -np.inf)
+
+                max_pert = np.expand_dims(np.min(q1, axis=1),axis=1)
+                min_pert = np.expand_dims(np.max(q2, axis=1),axis=1)
+                perturbed = np.where(perturbed>max_pert, max_pert, perturbed)
+                perturbed = np.where(perturbed < min_pert, min_pert, perturbed)
+                # perturbed = np.clip(perturbed, min_, max_)
+                a._model.session.run(tf.assign(a._model._pert, perturbed))
 
                 # perturbed = x + gradient * epsilon
                 # perturbed = np.clip(perturbed, min_, max_)
 
                 _, is_adversarial = a.forward_one(x)
+                a._model.session.run(tf.assign(a._model._pert, pert))
+
                 if is_adversarial:
                     if decrease_if_first and i < 20:
                         logging.info('repeating attack with smaller epsilons')

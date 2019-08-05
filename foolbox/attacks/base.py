@@ -138,7 +138,7 @@ def call_decorator(call_fn):
                           ' is already reached')
         else:
             try:
-                _ = call_fn(self, a, label=None, unpack=None, **kwargs)
+                _ = call_fn(self, a, label=label, unpack=None, **kwargs)
                 assert _ is None, 'decorated __call__ method must return None'
             except StopAttack:
                 # if a threshold is specified, StopAttack will be thrown

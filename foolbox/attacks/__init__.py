@@ -2,7 +2,7 @@
 
 from .base import Attack
 from .gradient import GradientAttack, GradientSignAttack, FGSM
-from .iterative_gradient import IterativeGradientAttack, IterativeGradientSignAttack
+from .iterative_gradient import IterativeGradientAttack, IterativeGradientSignAttack, MultiStepGradientBaseAttack
 from .lbfgs import LBFGSAttack, ApproximateLBFGSAttack
 from .deepfool import DeepFoolAttack, DeepFoolL2Attack, DeepFoolLinfinityAttack
 from .saliency import SaliencyMapAttack

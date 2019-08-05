@@ -107,6 +107,11 @@ class Adversarial(object):
     @property
     def perturbed(self):
         """The best adversarial example found so far."""
+        return self.__best_perturbation
+
+    @property
+    def adversarial_inputs(self):
+        """The best adversarial example found so far."""
         return self.__best_adversarial
 
     @property
@@ -179,8 +184,9 @@ class Adversarial(object):
             The distance between the given input and the original input.
 
         """
+        adversarial = self._model.session.run(self._model._adversarial, feed_dict={self._model._inputs: x[np.newaxis]})
         return self.__distance(
-            self.__unperturbed_for_distance,
+            adversarial,
             x,
             bounds=self.bounds())
 
@@ -198,9 +204,16 @@ class Adversarial(object):
             if self.verbose:
                 print('new best adversarial: {}'.format(distance))
 
-            self.__best_adversarial = x
+            adversarial = self._model.session.run(self._model._adversarial,
+                                                  feed_dict={self._model._inputs: x[np.newaxis]})
+
+            perturbation = self._model.session.run(self._model._pert,
+                                                  feed_dict={self._model._inputs: x[np.newaxis]})
+
+            self.__best_adversarial = adversarial
             self.__best_distance = distance
             self.__best_adversarial_output = predictions
+            self.__best_perturbation = perturbation
 
             self._best_prediction_calls = self._total_prediction_calls
             self._best_gradient_calls = self._total_gradient_calls
@@ -306,7 +319,8 @@ class Adversarial(object):
             Controls if the bounds for the pixel values should be checked.
 
         """
-        in_bounds = self.in_bounds(x)
+        adversarial = self._model.session.run(self._model._adversarial, feed_dict={self._model._inputs: x[np.newaxis]})
+        in_bounds = self.in_bounds(adversarial)
         assert not strict or in_bounds
 
         self._total_prediction_calls += 1

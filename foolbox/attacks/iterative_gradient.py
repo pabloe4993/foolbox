@@ -15,7 +15,7 @@ class IterativeGradientBaseAttack(Attack):
     def _gradient(self, a, x):
         raise NotImplementedError
 
-    def _run(self, a, epsilons, max_epsilon, steps):
+    def _run(self, a, epsilons, max_epsilon, steps, label):
         logging.warning('Please consider using the L2BasicIterativeAttack,'
                         ' the LinfinityBasicIterativeAttack or one of its'
                         ' other variants such as the ProjectedGradientDescent'
@@ -44,7 +44,6 @@ class IterativeGradientBaseAttack(Attack):
                 # we don't return early if an adversarial was found
                 # because there might be a different epsilon
                 # and/or step that results in a better adversarial
-
 
 class IterativeGradientAttack(IterativeGradientBaseAttack):
     """Like GradientAttack but with several steps for each epsilon.
@@ -85,7 +84,7 @@ class IterativeGradientAttack(IterativeGradientBaseAttack):
         del label
         del unpack
 
-        self._run(a, epsilons=epsilons, max_epsilon=max_epsilon, steps=steps)
+        self._run(a, epsilons=epsilons, max_epsilon=max_epsilon, steps=steps, label=label)
 
     def _gradient(self, a, x):
         min_, max_ = a.bounds()
@@ -134,10 +133,121 @@ class IterativeGradientSignAttack(IterativeGradientBaseAttack):
         del label
         del unpack
 
-        self._run(a, epsilons=epsilons, max_epsilon=max_epsilon, steps=steps)
+        self._run(a, epsilons=epsilons, max_epsilon=max_epsilon, steps=steps, label=label)
 
     def _gradient(self, a, x):
         min_, max_ = a.bounds()
         gradient = a.gradient_one(x)
         gradient = np.sign(gradient) * (max_ - min_)
         return gradient
+
+
+class MultiStepGradientBaseAttack(IterativeGradientBaseAttack):
+    """Common base class for single step gradient attacks."""
+
+    @call_decorator
+    def __call__(self, input_or_adv, label=None, unpack=True,
+                 epsilons=100, max_epsilon=1, steps=1000):
+
+        """Like GradientSignAttack but with several steps for each epsilon.
+
+        Parameters
+        ----------
+        input_or_adv : `numpy.ndarray` or :class:`Adversarial`
+            The original, unperturbed input as a `numpy.ndarray` or
+            an :class:`Adversarial` instance.
+        label : int
+            The reference label of the original input. Must be passed
+            if `a` is a `numpy.ndarray`, must not be passed if `a` is
+            an :class:`Adversarial` instance.
+        unpack : bool
+            If true, returns the adversarial input, otherwise returns
+            the Adversarial object.
+        epsilons : int or Iterable[float]
+            Either Iterable of step sizes in the direction of the sign of
+            the gradient or number of step sizes between 0 and max_epsilon
+            that should be tried.
+        max_epsilon : float
+            Largest step size if epsilons is not an iterable.
+        steps : int
+            Number of iterations to run.
+
+        """
+
+        a = input_or_adv
+        del input_or_adv
+        # del label
+        del unpack
+
+        self._run(a, epsilons=epsilons, max_epsilon=max_epsilon, steps=steps, label=label)
+
+    def _gradient(self, a, x):
+        min_, max_ = a.bounds()
+        gradient = a.gradient_one()
+        gradient_norm = np.sqrt(np.mean(np.square(gradient)))
+        gradient = gradient / (gradient_norm + 1e-8) * (max_ - min_)
+        return gradient
+
+    def _run(self, a, epsilons, max_epsilon, steps, label):
+        if not a.has_gradient():
+            return
+
+        if a._criterion.__class__.__name__ in ['Misclassification', 'ConfidentMisclassification']:
+            label_coeff = -1.0
+        else:
+            label_coeff =  1.0
+
+        import tensorflow as tf
+        x = a.unperturbed
+        min_, max_ = a.bounds()
+
+        self._optimizer = tf.train.AdamOptimizer()
+
+        grad = self._optimizer.compute_gradients(loss= a._model._loss, var_list=a._model._pert)
+        # self._optimizer = tf.train.AdamOptimizer()
+        # train_op = self._optimizer.apply_gradients(zip([grad[0][0]], [a._model._pert]))
+        train_op = self._optimizer.apply_gradients(grad)
+
+        a._model.session.run(tf.variables_initializer(self._optimizer.variables()))
+
+        for step in range(steps):  # to repeat with decreased epsilons if necessary
+            # gradient = self._gradient(a,x)
+            pert = a._model.session.run(a._model._pert)
+            # adv = a._model.session.run(a._model._adversarial, feed_dict={a._model._inputs: x[np.newaxis]})
+            # adv = x
+            mask =a._model.session.run(a._model._mask)
+            gradient =a._model.session.run(fetches=grad, feed_dict={a._model._inputs: x[np.newaxis],
+                                                                    a._model._labels: [label],
+                                                                    a._model._labels_coeff: label_coeff})
+            _, loss = a._model.session.run(fetches=[train_op, a._model._loss], feed_dict={a._model._inputs: x[np.newaxis],
+                                                              a._model._labels: [label],
+                                                              a._model._labels_coeff: label_coeff})
+            pert = a._model.session.run(a._model._pert)
+
+            # self._optimizer.apply_gradients(zip(gradient,pert))
+
+
+            # perturbed = pert + gradient * epsilon
+            # a._model.session.run(tf.assign(a._model._pert, perturbed))
+            # adv = a._model.session.run(a._model._adversarial, feed_dict={a._model._inputs: x[np.newaxis]})
+
+            q1 = np.where(mask, max_ - x, np.inf)
+            q2 = np.where(mask, min_ - x, -np.inf)
+            #
+            max_pert = np.expand_dims(np.min(q1, axis=1),axis=1)
+            min_pert = np.expand_dims(np.max(q2, axis=1),axis=1)
+            # perturbed = np.where(perturbed>max_pert, max_pert, perturbed)
+            # perturbed = np.where(perturbed < min_pert, min_pert, perturbed)
+            # a._model.session.run(tf.assign(a._model._pert, perturbed))
+
+            # perturbed = x + gradient * epsilon
+            # perturbed = np.clip(perturbed, min_, max_)
+
+            _, is_adversarial = a.forward_one(x)
+            # a._model.session.run(tf.assign(a._model._pert, pert))
+
+            if is_adversarial:
+                return
+
+
+

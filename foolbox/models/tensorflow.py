@@ -30,17 +30,19 @@ class TensorFlowModel(DifferentiableModel):
     def __init__(
             self,
             inputs,
+            perturbation,
+            adversarial_inputs,
+            mask,
             logits,
             bounds,
             channel_axis=3,
-            preprocessing=(0, 1),
-            dx = None):
+            preprocessing=(0, 1)):
 
         super(TensorFlowModel, self).__init__(bounds=bounds,
                                               channel_axis=channel_axis,
                                               preprocessing=preprocessing)
-        if dx == None:
-            dx = inputs
+        # if dx == None:
+        #     dx = inputs
         # delay import until class is instantiated
         import tensorflow as tf
 
@@ -59,25 +61,34 @@ class TensorFlowModel(DifferentiableModel):
             self._session = session
             self._inputs = inputs
             self._logits = logits
+            self._adversarial = adversarial_inputs
+            self._mask = mask
 
             labels = tf.placeholder(tf.int64, (None,), name='labels')
             self._labels = labels
-            self._dx = dx
+            self._pert = perturbation
 
-            loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits)
-            loss = tf.reduce_sum(loss)
-            self._loss = loss
+            label_coeff = tf.constant(-1.0, dtype=tf.float32)
+            self._labels_coeff =tf.placeholder_with_default(label_coeff, name='label_coeff',shape=label_coeff.shape)
 
-            gradient, = tf.gradients(loss, dx)
+
+            self._beta = 0 #0.0001 #1
+            self._ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits)
+
+            self._regularizer = tf.norm(self._pert,ord=1)
+            self._loss  = tf.reduce_mean(self._labels_coeff*self._ce_loss + self._beta * self._regularizer)
+            # loss = tf.reduce_sum(loss)
+
+            gradient, = tf.gradients(self._loss, perturbation)
             if gradient is None:
-                gradient = tf.zeros_like(dx)
+                gradient = tf.zeros_like(perturbation)
             self._gradient = gradient
 
             backward_grad_logits = tf.placeholder(tf.float32, logits.shape)
             backward_loss = tf.reduce_sum(logits * backward_grad_logits)
-            backward_grad_inputs, = tf.gradients(backward_loss, dx)
+            backward_grad_inputs, = tf.gradients(backward_loss, perturbation)
             if backward_grad_inputs is None:
-                backward_grad_inputs = tf.zeros_like(dx)
+                backward_grad_inputs = tf.zeros_like(perturbation)
 
             self._backward_grad_logits = backward_grad_logits
             self._backward_grad_inputs = backward_grad_inputs
