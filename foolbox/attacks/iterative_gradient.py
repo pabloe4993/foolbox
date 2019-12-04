@@ -192,7 +192,7 @@ class MultiStepGradientBaseAttack(IterativeGradientBaseAttack):
         if not a.has_gradient():
             return
 
-        if a._criterion.__class__.__name__ in ['Misclassification', 'ConfidentMisclassification']:
+        if a._criterion.__class__.__name__ in ['Misclassification', 'ConfidentMisclassification','OriginalClassProbability']:
             label_coeff = -1.0
         else:
             label_coeff =  1.0
