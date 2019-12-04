@@ -6,6 +6,8 @@ import logging
 from .base import DifferentiableModel
 
 
+import time
+
 class TensorFlowModel(DifferentiableModel):
     """Creates a :class:`Model` instance from existing `TensorFlow` tensors.
 
@@ -72,11 +74,23 @@ class TensorFlowModel(DifferentiableModel):
             self._labels_coeff =tf.placeholder_with_default(label_coeff, name='label_coeff',shape=label_coeff.shape)
 
 
-            self._beta = 0 #0.0001 #1
+            self._beta =0 #100000 #0.0001 # 0.001 #0.01 #0.1 #0.0001 #1
+
+            self._softmax = tf.nn.softmax(logits=logits)
+            # self._ce_loss = tf.log(1.0 - self._softmax[:,labels[0]])
             self._ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits)
 
-            self._regularizer = tf.norm(self._pert,ord=1)
-            self._loss  = tf.reduce_mean(self._labels_coeff*self._ce_loss + self._beta * self._regularizer)
+            # self._regularizer = tf.norm(self._pert,ord=np.inf)
+            # mean, variance = tf.nn.moments(self._pert,  [0,1,2])
+            # self._regularizer = tf.reduce_mean(variance)
+            # self._regularizer = tf.reduce_max(self._pert)-tf.reduce_min(self._pert)
+            self._regularizer = tf.nn.l2_loss(self._pert)
+
+            # qq=tf.roll(self._pert,shift=1, axis=0)
+            # self._regularizer = tf.nn.l2_loss(self._pert-qq)
+            self._ce_loss_mean = tf.reduce_mean(self._labels_coeff*self._ce_loss )
+            self._w_regularizer =  self._beta * self._regularizer
+            self._loss  = self._ce_loss_mean +self._w_regularizer
             # loss = tf.reduce_sum(loss)
 
             gradient, = tf.gradients(self._loss, perturbation)
